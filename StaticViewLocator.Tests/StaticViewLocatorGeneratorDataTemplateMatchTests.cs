@@ -8,7 +8,7 @@ namespace StaticViewLocator.Tests;
 public class StaticViewLocatorGeneratorDataTemplateMatchTests
 {
     [Fact]
-    public async Task DefaultGeneratedMatchUsesSameExactSemanticsAsGeneratedBuild()
+    public async Task DefaultGeneratedMatchRequiresAResolvedViewFactory()
     {
         const string source = """
 using Avalonia.Controls;
@@ -16,7 +16,8 @@ using StaticViewLocator;
 
 namespace TestApp.ViewModels
 {
-    public sealed class WidgetViewModel<T> { }
+    public abstract class WidgetViewModelBase { }
+    public sealed class WidgetViewModel<T> : WidgetViewModelBase { }
 }
 
 
@@ -27,6 +28,7 @@ namespace TestApp.Views
 
 namespace TestApp
 {
+    [StaticViewMapping(typeof(ViewModels.WidgetViewModelBase), typeof(Views.WidgetView))]
     [StaticViewLocator(GenerateIDataTemplate = true)]
     public partial class ViewLocator { }
 }
@@ -40,9 +42,14 @@ namespace TestApp
             locatorSource,
             StringComparison.Ordinal);
         Assert.Contains(
-            "return s_views.ContainsKey(type) || s_missingViews.ContainsKey(type);",
+            "instance is TestApp.ViewModels.WidgetViewModelBase",
             locatorSource,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "return TryGetResolvedViewFactory(data, out _);",
+            locatorSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("s_missingViews.ContainsKey", locatorSource, StringComparison.Ordinal);
         Assert.DoesNotContain("GetGenericTypeDefinition()", locatorSource, StringComparison.Ordinal);
     }
 }
