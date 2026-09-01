@@ -171,7 +171,7 @@ Do not reference packages from both rows in the same application. StaticViewLoca
 | `ExactThenBaseTypesThenInterfaces` | Exact type, mapped bases, then mapped interfaces. This is the default and preserves the established base-before-interface precedence. |
 | `ExactThenInterfacesThenBaseTypes` | Exact type, mapped interfaces, then mapped bases. |
 
-For concrete model types visible to the compilation, inherited or interface results are flattened into exact dictionary entries. Runtime type-test branches cover types that cannot be enumerated at compile time. Interface branches have deterministic ordering; when a discovered concrete type has equally applicable interfaces mapped to different views, `SVL0007` requires an explicit `[StaticViewMapping]`. An open generic model mapping used by generated adapters must inherit a mapped non-generic base class or implement a mapped non-generic interface. That gives the generator a legal closed-instance type test; otherwise it reports `SVL0008` instead of adding a reflective fallback.
+For concrete model types visible to the compilation, inherited or interface results are flattened into exact dictionary entries. Runtime type-test branches cover types that cannot be enumerated at compile time. Interface branches have deterministic ordering; when a discovered concrete type has equally applicable interfaces mapped to different views, `SVL0007` requires an explicit `[StaticViewMapping]`. For an open generic model mapping, the generator first tries to infer an unambiguous non-generic base class or interface contract that resolves to the same view, then emits a legal closed-instance type test for that contract. A conflicting or overly broad contract is not inferred. If no safe mapped or inferred contract exists, it reports `SVL0008` instead of adding a reflective fallback.
 
 The generated `Build` pipeline is:
 
@@ -239,7 +239,7 @@ The solution builds the same complete AXAML sample against both distributions. `
 | `SVL0005` | Error | The annotated locator is nested, static, file-local, or not partial. |
 | `SVL0006` | Error | A configured mapping contract is not an open generic interface or class with exactly one type parameter. |
 | `SVL0007` | Error | Equally applicable mapped interfaces resolve a discovered model to different views; add an explicit mapping. |
-| `SVL0008` | Error | An open generic adapter mapping has no mapped non-generic base/interface contract for a compiled type test. |
+| `SVL0008` | Error | An open generic adapter mapping has no safe mapped or inferred non-generic base/interface contract for a compiled type test. |
 
 ### Attribute options
 

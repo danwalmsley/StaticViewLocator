@@ -156,6 +156,82 @@ namespace TestApp
     }
 
     [Fact]
+    public async Task InfersAnUnambiguousNonGenericBaseContractForAnOpenGenericMapping()
+    {
+        const string source = """
+using Avalonia.Controls;
+using StaticViewLocator;
+
+namespace TestApp.ViewModels
+{
+    public abstract class FilterViewModelBase { }
+    public sealed class FilterViewModel<T> : FilterViewModelBase { }
+}
+
+namespace TestApp.Views
+{
+    public sealed class FilterView : UserControl { }
+}
+
+namespace TestApp
+{
+    [StaticViewLocator(GenerateIDataTemplate = true)]
+    public partial class ViewLocator { }
+}
+""";
+
+        var generated = await StaticViewLocatorGeneratorVerifier.GetGeneratedSourcesAsync(source);
+        var locatorSource = generated["ViewLocator_StaticViewLocator.cs"];
+
+        Assert.Contains(
+            "[typeof(TestApp.ViewModels.FilterViewModelBase)] = () => new TestApp.Views.FilterView()",
+            locatorSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "instance is TestApp.ViewModels.FilterViewModelBase",
+            locatorSource,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DoesNotInferABroadBaseContractWithConflictingDescendantViews()
+    {
+        const string source = """
+using Avalonia.Controls;
+using StaticViewLocator;
+
+namespace TestApp.ViewModels
+{
+    public abstract class RootViewModel { }
+    public sealed class FilterViewModel<T> : RootViewModel { }
+    public sealed class OtherViewModel : RootViewModel { }
+}
+
+namespace TestApp.Views
+{
+    public sealed class FilterView : UserControl { }
+    public sealed class OtherView : UserControl { }
+}
+
+namespace TestApp
+{
+    [StaticViewLocator(GenerateIDataTemplate = true)]
+    public partial class ViewLocator { }
+}
+""";
+
+        var result = StaticViewLocatorGeneratorVerifier.RunGenerator(source);
+
+        Assert.Single(result.GeneratorDiagnostics, static item => item.Id == "SVL0008");
+        var locatorSource = result.RunResult.GeneratedTrees.Single(tree =>
+            tree.FilePath.EndsWith("ViewLocator_StaticViewLocator.cs", StringComparison.Ordinal)).GetText().ToString();
+        Assert.DoesNotContain(
+            "[typeof(TestApp.ViewModels.RootViewModel)] = () =>",
+            locatorSource,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ReportsAmbiguousOpenGenericFallbackContracts()
     {
         const string source = """
@@ -222,7 +298,6 @@ public sealed class FilteredView : CountedView { }
 
 [StaticViewMapping(typeof(BaseViewModel), typeof(BaseView))]
 [StaticViewMapping(typeof(IContractViewModel), typeof(ContractView))]
-[StaticViewMapping(typeof(GenericViewModelBase), typeof(GenericView))]
 [StaticViewMapping(typeof(ExplicitViewModel), typeof(ExplicitOverrideView))]
 [StaticViewMapping(typeof(FilteredViewModel), typeof(FilteredView))]
 [StaticViewLocator(
