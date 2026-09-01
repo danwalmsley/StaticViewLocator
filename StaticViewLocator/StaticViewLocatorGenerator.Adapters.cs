@@ -650,6 +650,7 @@ public sealed partial class StaticViewLocatorGenerator
 
         AddInferredOpenGenericContracts(
             mode,
+            relevantViewModels,
             resolvedMappings,
             resolvedViewModels,
             mappedViews);
@@ -765,6 +766,7 @@ public sealed partial class StaticViewLocatorGenerator
 
     private static void AddInferredOpenGenericContracts(
         AdapterResolutionMode mode,
+        IReadOnlyList<INamedTypeSymbol> relevantViewModels,
         List<ResolvedViewMapping> resolvedMappings,
         HashSet<INamedTypeSymbol> resolvedViewModels,
         IDictionary<INamedTypeSymbol, INamedTypeSymbol> mappedViews)
@@ -841,11 +843,11 @@ public sealed partial class StaticViewLocatorGenerator
                     return SymbolEqualityComparer.Default.Equals(existingView, targetView);
                 }
 
-                return originalMappings
-                    .Where(candidate => IsAssignableToContract(candidate.ViewModelType, contract))
-                    .Select(static candidate => candidate.ViewType)
-                    .Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default)
-                    .All(candidateView => SymbolEqualityComparer.Default.Equals(candidateView, targetView));
+                return relevantViewModels
+                    .Where(candidate => IsAssignableToContract(candidate, contract))
+                    .All(candidate =>
+                        mappedViews.TryGetValue(candidate, out var candidateView) &&
+                        SymbolEqualityComparer.Default.Equals(candidateView, targetView));
             }
         }
     }

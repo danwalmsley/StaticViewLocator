@@ -232,6 +232,43 @@ namespace TestApp
     }
 
     [Fact]
+    public void DoesNotInferABroadBaseContractWithAnUnresolvedDescendant()
+    {
+        const string source = """
+using Avalonia.Controls;
+using StaticViewLocator;
+
+namespace TestApp.ViewModels
+{
+    public abstract class RootViewModel { }
+    public sealed class FilterViewModel<T> : RootViewModel { }
+    public sealed class UnresolvedViewModel : RootViewModel { }
+}
+
+namespace TestApp.Views
+{
+    public sealed class FilterView : UserControl { }
+}
+
+namespace TestApp
+{
+    [StaticViewLocator(GenerateIDataTemplate = true)]
+    public partial class ViewLocator { }
+}
+""";
+
+        var result = StaticViewLocatorGeneratorVerifier.RunGenerator(source);
+
+        Assert.Single(result.GeneratorDiagnostics, static item => item.Id == "SVL0008");
+        var locatorSource = result.RunResult.GeneratedTrees.Single(tree =>
+            tree.FilePath.EndsWith("ViewLocator_StaticViewLocator.cs", StringComparison.Ordinal)).GetText().ToString();
+        Assert.DoesNotContain(
+            "[typeof(TestApp.ViewModels.RootViewModel)] = () =>",
+            locatorSource,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ReportsAmbiguousOpenGenericFallbackContracts()
     {
         const string source = """
