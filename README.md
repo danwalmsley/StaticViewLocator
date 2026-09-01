@@ -257,7 +257,7 @@ The solution builds the same complete AXAML sample against both distributions. `
 
 The generator emits:
 - `s_views`: resolved mappings from `Type` to `Func<Control>`
-- `s_missingViews`: unresolved mappings used for `"Not Found: ..."` fallback text
+- `s_missingViews`: unresolved mappings used for `"Not Found: ..."` fallback text when the generator emits the default or legacy missing-view path; omitted when a generated adapter supplies a custom `BuildMissingView`
 - optional exact factory creation through `TryCreateViewExact`
 - optional generated ReactiveUI `IViewLocator`
 - optional generated Avalonia `IDataTemplate`

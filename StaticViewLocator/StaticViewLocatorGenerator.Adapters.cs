@@ -1144,6 +1144,7 @@ public sealed partial class StaticViewLocatorGenerator
         Compilation compilation,
         INamedTypeSymbol locatorSymbol,
         bool generateIViewLocator,
+        bool missingViewHookExists,
         ICollection<Diagnostic> diagnostics)
     {
         var hookModifier = GetHookModifier(locatorSymbol);
@@ -1271,14 +1272,7 @@ public sealed partial class StaticViewLocatorGenerator
             source.AppendLine();
         }
 
-        if (!HasControlHook(
-                compilation,
-                locatorSymbol,
-                diagnostics,
-                "BuildMissingView",
-                "BuildMissingView(object?, Type)",
-                "System.Object",
-                "System.Type"))
+        if (!missingViewHookExists)
         {
             source.Append(
                 $$"""

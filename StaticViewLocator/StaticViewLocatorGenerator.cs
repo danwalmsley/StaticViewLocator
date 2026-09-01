@@ -755,6 +755,23 @@ public sealed partial class StaticViewLocatorGenerator : IIncrementalGenerator
                                             HasDataTemplateBuildMethod(locatorSymbol, diagnostics);
         var dataTemplateMatchMethodExists = generateIDataTemplate &&
                                             HasDataTemplateMatchMethod(locatorSymbol, diagnostics);
+        var dataTemplateMissingViewHookExists = generateIDataTemplate &&
+                                                !dataTemplateBuildMethodExists &&
+                                                HasControlHook(
+                                                    compilation,
+                                                    locatorSymbol,
+                                                    diagnostics,
+                                                    "BuildMissingView",
+                                                    "BuildMissingView(object?, Type)",
+                                                    "System.Object",
+                                                    "System.Type");
+        var shouldGenerateRuntimeFallbackMethods =
+            (!buildMethodExists && !generateIDataTemplate) ||
+            ((generateIDataTemplate ? dataTemplateBuildMethodExists : buildMethodExists) &&
+             ShouldGenerateRuntimeTypeFallbackMethods(locatorSymbol));
+        var shouldGenerateMissingViews =
+            shouldGenerateRuntimeFallbackMethods ||
+            (generateIDataTemplate && !dataTemplateBuildMethodExists && !dataTemplateMissingViewHookExists);
 
         var format = new SymbolDisplayFormat(
             typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypes,
@@ -908,67 +925,70 @@ public sealed partial class StaticViewLocatorGenerator : IIncrementalGenerator
         }
 
         source.AppendLine("\t};");
-        source.AppendLine();
-        source.AppendLine("\tprivate static Dictionary<Type, string> s_missingViews = new()");
-        source.AppendLine("\t{");
-
-        foreach (var viewModelSymbol in relevantViewModels)
+        if (shouldGenerateMissingViews)
         {
-            if (resolvedViewModels.Contains(viewModelSymbol))
+            source.AppendLine();
+            source.AppendLine("\tprivate static Dictionary<Type, string> s_missingViews = new()");
+            source.AppendLine("\t{");
+
+            foreach (var viewModelSymbol in relevantViewModels)
             {
-                continue;
+                if (resolvedViewModels.Contains(viewModelSymbol))
+                {
+                    continue;
+                }
+
+                var namespaceNameViewModel = GetNamespaceName(viewModelSymbol.ContainingNamespace);
+                var sourceTypeNameViewModel = GetSourceTypeName(viewModelSymbol);
+                var metadataTypeNameViewModel = GetMetadataTypeName(viewModelSymbol);
+
+                var sourceNamespaceView = ApplyReplacementRules(namespaceNameViewModel, options.NamespaceReplacementRules);
+                var metadataNamespaceView = ApplyReplacementRules(namespaceNameViewModel, options.NamespaceReplacementRules);
+
+                var sourceTypeNameView = ApplyReplacementRules(sourceTypeNameViewModel, options.TypeNameReplacementRules);
+                var metadataTypeNameView = ApplyReplacementRules(metadataTypeNameViewModel, options.TypeNameReplacementRules);
+
+                if (viewModelSymbol.TypeKind == TypeKind.Interface)
+                {
+                    sourceTypeNameView = StripInterfacePrefix(sourceTypeNameView, options.InterfacePrefixesToStrip);
+                    metadataTypeNameView = StripInterfacePrefix(metadataTypeNameView, options.InterfacePrefixesToStrip);
+                }
+
+                if (options.StripGenericArityFromViewName)
+                {
+                    sourceTypeNameView = StripGenericArity(sourceTypeNameView);
+                    metadataTypeNameView = StripGenericArity(metadataTypeNameView);
+                }
+
+                var classNameViewModel = GetSourceTypeReference(viewModelSymbol);
+                var classNameView = CombineNamespaceAndType(sourceNamespaceView, sourceTypeNameView);
+                var metadataNameView = CombineNamespaceAndType(metadataNamespaceView, metadataTypeNameView);
+
+                INamedTypeSymbol? viewSymbol;
+                if (inferredMappings.TryGetValue(viewModelSymbol, out var explicitViewSymbol))
+                {
+                    viewSymbol = explicitViewSymbol;
+                    classNameView = GetSourceTypeReference(explicitViewSymbol);
+                }
+                else
+                {
+                    viewSymbol = compilation.GetTypeByMetadataName(metadataNameView);
+                }
+                var isSupportedView = viewSymbol is not null && IsSupportedView(viewSymbol, viewBaseTypes);
+
+                if (viewSymbol is not null &&
+                    isSupportedView &&
+                    (viewSymbol.IsGenericType || CanInstantiateView(compilation, locatorSymbol, viewSymbol)))
+                {
+                    continue;
+                }
+
+                source.AppendLine(
+                    $"\t\t[typeof({classNameViewModel})] = \"Not Found: {classNameView}\",");
             }
 
-            var namespaceNameViewModel = GetNamespaceName(viewModelSymbol.ContainingNamespace);
-            var sourceTypeNameViewModel = GetSourceTypeName(viewModelSymbol);
-            var metadataTypeNameViewModel = GetMetadataTypeName(viewModelSymbol);
-
-            var sourceNamespaceView = ApplyReplacementRules(namespaceNameViewModel, options.NamespaceReplacementRules);
-            var metadataNamespaceView = ApplyReplacementRules(namespaceNameViewModel, options.NamespaceReplacementRules);
-
-            var sourceTypeNameView = ApplyReplacementRules(sourceTypeNameViewModel, options.TypeNameReplacementRules);
-            var metadataTypeNameView = ApplyReplacementRules(metadataTypeNameViewModel, options.TypeNameReplacementRules);
-
-            if (viewModelSymbol.TypeKind == TypeKind.Interface)
-            {
-                sourceTypeNameView = StripInterfacePrefix(sourceTypeNameView, options.InterfacePrefixesToStrip);
-                metadataTypeNameView = StripInterfacePrefix(metadataTypeNameView, options.InterfacePrefixesToStrip);
-            }
-
-            if (options.StripGenericArityFromViewName)
-            {
-                sourceTypeNameView = StripGenericArity(sourceTypeNameView);
-                metadataTypeNameView = StripGenericArity(metadataTypeNameView);
-            }
-
-            var classNameViewModel = GetSourceTypeReference(viewModelSymbol);
-            var classNameView = CombineNamespaceAndType(sourceNamespaceView, sourceTypeNameView);
-            var metadataNameView = CombineNamespaceAndType(metadataNamespaceView, metadataTypeNameView);
-
-            INamedTypeSymbol? viewSymbol;
-            if (inferredMappings.TryGetValue(viewModelSymbol, out var explicitViewSymbol))
-            {
-                viewSymbol = explicitViewSymbol;
-                classNameView = GetSourceTypeReference(explicitViewSymbol);
-            }
-            else
-            {
-                viewSymbol = compilation.GetTypeByMetadataName(metadataNameView);
-            }
-            var isSupportedView = viewSymbol is not null && IsSupportedView(viewSymbol, viewBaseTypes);
-
-            if (viewSymbol is not null &&
-                isSupportedView &&
-                (viewSymbol.IsGenericType || CanInstantiateView(compilation, locatorSymbol, viewSymbol)))
-            {
-                continue;
-            }
-
-            source.AppendLine(
-                $"\t\t[typeof({classNameViewModel})] = \"Not Found: {classNameView}\",");
+            source.AppendLine("\t};");
         }
-
-        source.AppendLine("\t};");
 
         if (generateIViewLocator || generateIDataTemplate)
         {
@@ -1035,7 +1055,13 @@ public sealed partial class StaticViewLocatorGenerator : IIncrementalGenerator
 
         if (!dataTemplateBuildMethodExists && generateIDataTemplate)
         {
-            AppendDataTemplateBuild(source, compilation, locatorSymbol, generateIViewLocator, diagnostics);
+            AppendDataTemplateBuild(
+                source,
+                compilation,
+                locatorSymbol,
+                generateIViewLocator,
+                dataTemplateMissingViewHookExists,
+                diagnostics);
         }
 
         if (generateIDataTemplate && !dataTemplateMatchMethodExists)
@@ -1043,10 +1069,6 @@ public sealed partial class StaticViewLocatorGenerator : IIncrementalGenerator
             AppendDataTemplateMatch(source, locatorSymbol, diagnostics);
         }
 
-        var shouldGenerateRuntimeFallbackMethods =
-            (!buildMethodExists && !generateIDataTemplate) ||
-            ((generateIDataTemplate ? dataTemplateBuildMethodExists : buildMethodExists) &&
-             ShouldGenerateRuntimeTypeFallbackMethods(locatorSymbol));
         if (shouldGenerateRuntimeFallbackMethods)
         {
             source.Append(

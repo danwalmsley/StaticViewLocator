@@ -52,4 +52,32 @@ namespace TestApp
         Assert.DoesNotContain("s_missingViews.ContainsKey", locatorSource, StringComparison.Ordinal);
         Assert.DoesNotContain("GetGenericTypeDefinition()", locatorSource, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task CustomMissingViewHookOmitsTheMissingViewTable()
+    {
+        const string source = """
+using System;
+using Avalonia.Controls;
+using StaticViewLocator;
+
+namespace TestApp;
+
+public sealed class UnresolvedViewModel { }
+
+[StaticViewLocator(
+    GenerateIDataTemplate = true,
+    GenerateRuntimeTypeFallbackMethods = false)]
+public partial class ViewLocator
+{
+    protected virtual Control? BuildMissingView(object? data, Type type) => null;
+}
+""";
+
+        var generated = await StaticViewLocatorGeneratorVerifier.GetGeneratedSourcesAsync(source);
+        var locatorSource = generated["ViewLocator_StaticViewLocator.cs"];
+
+        Assert.DoesNotContain("s_missingViews", locatorSource, StringComparison.Ordinal);
+        Assert.Contains("return BuildMissingView(param, viewModelType);", locatorSource, StringComparison.Ordinal);
+    }
 }
