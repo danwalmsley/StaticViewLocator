@@ -812,12 +812,14 @@ public sealed partial class StaticViewLocatorGenerator
                      current is not null;
                      current = current.BaseType)
                 {
-                    if (!current.IsGenericType &&
-                        current.SpecialType != SpecialType.System_Object &&
-                        IsCompatibleContract(current, openGenericMapping.ViewType))
+                    if (current.IsGenericType || current.SpecialType == SpecialType.System_Object)
                     {
-                        return current;
+                        continue;
                     }
+
+                    return IsCompatibleContract(current, openGenericMapping.ViewType)
+                        ? current
+                        : null;
                 }
 
                 return null;
@@ -877,14 +879,12 @@ public sealed partial class StaticViewLocatorGenerator
         AdapterResolutionMode mode,
         ICollection<Diagnostic> diagnostics)
     {
-        var hasMappedBaseType = false;
+        INamedTypeSymbol? selectedBaseView = null;
         for (var current = viewModelType.BaseType; current is not null; current = current.BaseType)
         {
             if (!current.IsGenericType &&
-                mappedViews.TryGetValue(current, out var mappedView) &&
-                SymbolEqualityComparer.Default.Equals(mappedView, targetView))
+                mappedViews.TryGetValue(current, out selectedBaseView))
             {
-                hasMappedBaseType = true;
                 break;
             }
         }
@@ -897,19 +897,16 @@ public sealed partial class StaticViewLocatorGenerator
                 mappedViews.ContainsKey(other)))
             .OrderBy(static type => type.ToDisplayString(), StringComparer.Ordinal)
             .ToArray();
-        var matchingInterfaceCandidates = interfaceCandidates
-            .Where(candidate => SymbolEqualityComparer.Default.Equals(mappedViews[candidate], targetView))
+        var distinctInterfaceViews = interfaceCandidates
+            .Select(candidate => mappedViews[candidate])
+            .Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default)
             .ToArray();
-        var hasMappedInterface = matchingInterfaceCandidates.Length > 0;
-
         var interfaceIsSelected = mode == AdapterResolutionMode.ExactThenInterfaces ||
-                                  (mode == AdapterResolutionMode.ExactThenInterfacesThenBaseTypes && hasMappedInterface) ||
-                                  (mode == AdapterResolutionMode.ExactThenBaseTypesThenInterfaces && !hasMappedBaseType);
-        if (interfaceIsSelected &&
-            interfaceCandidates.Select(candidate => mappedViews[candidate])
-                .Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default)
-                .Skip(1)
-                .Any())
+                                  (mode == AdapterResolutionMode.ExactThenInterfacesThenBaseTypes &&
+                                   interfaceCandidates.Length > 0) ||
+                                  (mode == AdapterResolutionMode.ExactThenBaseTypesThenInterfaces &&
+                                   selectedBaseView is null);
+        if (interfaceIsSelected && distinctInterfaceViews.Length > 1)
         {
             diagnostics.Add(Diagnostic.Create(
                 AmbiguousFallbackMapping,
@@ -920,14 +917,18 @@ public sealed partial class StaticViewLocatorGenerator
             return null;
         }
 
-        return mode switch
+        var selectedView = mode switch
         {
-            AdapterResolutionMode.ExactThenBaseTypes => hasMappedBaseType,
-            AdapterResolutionMode.ExactThenInterfaces => hasMappedInterface,
-            AdapterResolutionMode.ExactThenBaseTypesThenInterfaces => hasMappedBaseType || hasMappedInterface,
-            AdapterResolutionMode.ExactThenInterfacesThenBaseTypes => hasMappedInterface || hasMappedBaseType,
-            _ => false,
+            AdapterResolutionMode.ExactThenBaseTypes => selectedBaseView,
+            AdapterResolutionMode.ExactThenInterfaces => distinctInterfaceViews.SingleOrDefault(),
+            AdapterResolutionMode.ExactThenBaseTypesThenInterfaces =>
+                selectedBaseView ?? distinctInterfaceViews.SingleOrDefault(),
+            AdapterResolutionMode.ExactThenInterfacesThenBaseTypes =>
+                distinctInterfaceViews.SingleOrDefault() ?? selectedBaseView,
+            _ => null,
         };
+
+        return selectedView is not null && SymbolEqualityComparer.Default.Equals(selectedView, targetView);
     }
 
     private static void AppendGeneratedViewResolver(

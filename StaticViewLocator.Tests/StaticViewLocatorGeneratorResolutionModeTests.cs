@@ -297,6 +297,62 @@ public partial class ViewLocator { }
         Assert.DoesNotContain(result.GeneratorDiagnostics, static item => item.Id == "SVL0008");
     }
 
+    [Fact]
+    public void ReportsWhenNearestBaseShadowsTheOpenGenericTarget()
+    {
+        const string source = """
+using Avalonia.Controls;
+using StaticViewLocator;
+
+namespace TestApp;
+
+public abstract class RootViewModel { }
+public abstract class IntermediateViewModel : RootViewModel { }
+public sealed class GenericViewModel<T> : IntermediateViewModel { }
+public sealed class GenericView : UserControl { }
+public sealed class OtherView : UserControl { }
+
+[StaticViewMapping(typeof(RootViewModel), typeof(GenericView))]
+[StaticViewMapping(typeof(IntermediateViewModel), typeof(OtherView))]
+[StaticViewLocator(
+    GenerateIDataTemplate = true,
+    GeneratedAdapterResolutionMode = ViewResolutionMode.ExactThenBaseTypes)]
+public partial class ViewLocator { }
+""";
+
+        var result = StaticViewLocatorGeneratorVerifier.RunGenerator(source);
+
+        Assert.Single(result.GeneratorDiagnostics, static item => item.Id == "SVL0008");
+    }
+
+    [Fact]
+    public void ReportsWhenPreferredInterfaceShadowsTheOpenGenericTargetBase()
+    {
+        const string source = """
+using Avalonia.Controls;
+using StaticViewLocator;
+
+namespace TestApp;
+
+public interface IOtherViewModel { }
+public abstract class GenericViewModelBase { }
+public sealed class GenericViewModel<T> : GenericViewModelBase, IOtherViewModel { }
+public sealed class GenericView : UserControl { }
+public sealed class OtherView : UserControl { }
+
+[StaticViewMapping(typeof(GenericViewModelBase), typeof(GenericView))]
+[StaticViewMapping(typeof(IOtherViewModel), typeof(OtherView))]
+[StaticViewLocator(
+    GenerateIDataTemplate = true,
+    GeneratedAdapterResolutionMode = ViewResolutionMode.ExactThenInterfacesThenBaseTypes)]
+public partial class ViewLocator { }
+""";
+
+        var result = StaticViewLocatorGeneratorVerifier.RunGenerator(source);
+
+        Assert.Single(result.GeneratorDiagnostics, static item => item.Id == "SVL0008");
+    }
+
     [AvaloniaFact]
     public void GeneratedResolverCoversAllPathsWithoutAllocatingOrConstructingDuringMatch()
     {
